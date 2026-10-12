@@ -1,5 +1,5 @@
 /* Service worker - cache offline para Lector Texto */
-const CACHE = 'lector-v1';
+const CACHE = 'lector-v2';
 const ASSETS = [
   './',
   './index.html',

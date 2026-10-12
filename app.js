@@ -119,25 +119,65 @@ function idiomaParaVoz() {
   return idiomaOrigen();
 }
 
-function buscarVoz(lang) {
-  const base = lang.split('-')[0].toLowerCase();
-  return voces.find((v) => v.lang && v.lang.toLowerCase().startsWith(base)) || null;
+/* Chrome Android necesita locale completo (es-ES) y NO fijar .voice.
+   Ademas falla con textos largos: se parte en frases y se lee en cola. */
+const LOCALES = {
+  es: 'es-ES', en: 'en-US', pt: 'pt-BR', fr: 'fr-FR',
+  it: 'it-IT', de: 'de-DE', ru: 'ru-RU',
+};
+
+function localeDe(lang) { return LOCALES[lang] || lang; }
+
+function partirParaVoz(texto) {
+  const frases = texto.replace(/\s+/g, ' ').split(/(?<=[.!?…])\s+/);
+  const partes = [];
+  let cur = '';
+  frases.forEach((f) => {
+    if ((cur + f).length > 180 && cur) { partes.push(cur.trim()); cur = ''; }
+    cur += (cur ? ' ' : '') + f;
+  });
+  if (cur.trim()) partes.push(cur.trim());
+  return partes.filter(Boolean);
 }
+
+let vozActiva = false;
 
 function leer() {
   const texto = elTexto.value.trim();
   if (!texto) { setStatus('No hay texto para leer.'); return; }
   if (!window.speechSynthesis) { setStatus('Tu navegador no soporta lectura por voz.'); return; }
   speechSynthesis.cancel();
-  const lang = idiomaParaVoz();
-  const voz = buscarVoz(lang);
-  const u = new SpeechSynthesisUtterance(texto);
-  u.lang = voz ? voz.lang : lang;
-  if (voz) u.voice = voz;
-  u.onstart = () => { setStatus('Leyendo en ' + (u.lang) + '...'); $('btnParar').classList.remove('hidden'); };
-  u.onend = () => { setStatus('Lectura terminada.'); $('btnParar').classList.add('hidden'); };
-  u.onerror = () => { setStatus('No se encontro voz para ese idioma.'); $('btnParar').classList.add('hidden'); };
-  speechSynthesis.speak(u);
+  if (speechSynthesis.paused) speechSynthesis.resume();
+
+  const lang = localeDe(idiomaParaVoz());
+  const partes = partirParaVoz(texto);
+  let i = 0;
+  vozActiva = true;
+  $('btnParar').classList.remove('hidden');
+  setStatus('Leyendo en ' + lang + '...');
+
+  const siguiente = () => {
+    if (!vozActiva || i >= partes.length) {
+      if (vozActiva) setStatus('Lectura terminada.');
+      vozActiva = false;
+      $('btnParar').classList.add('hidden');
+      return;
+    }
+    const u = new SpeechSynthesisUtterance(partes[i]);
+    u.lang = lang;
+    u.rate = 1;
+    u.pitch = 1;
+    u.onend = () => { i++; siguiente(); };
+    u.onerror = (e) => {
+      const err = e && e.error ? e.error : 'desconocido';
+      if (err === 'interrupted' || err === 'canceled') return;
+      setStatus('No se pudo leer (' + err + '). Prueba idioma Espanol en el selector.');
+      vozActiva = false;
+      $('btnParar').classList.add('hidden');
+    };
+    speechSynthesis.speak(u);
+  };
+  siguiente();
 }
 
 /* ---------- PDF (dialogo de impresion) ---------- */
@@ -162,7 +202,7 @@ $('tabOrig').onclick = () => mostrarVista('original');
 $('tabTrad').onclick = () => mostrarVista('traduccion');
 $('btnPdf').onclick = guardarPDF;
 $('btnVoz').onclick = leer;
-$('btnParar').onclick = () => { speechSynthesis.cancel(); $('btnParar').classList.add('hidden'); setStatus('Detenido.'); };
+$('btnParar').onclick = () => { vozActiva = false; speechSynthesis.cancel(); $('btnParar').classList.add('hidden'); setStatus('Detenido.'); };
 $('btnTraducir').onclick = async () => {
   guardarVista();
   const texto = estado.original.trim();
