@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1720">
+<title>Lector Texto</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg:#0f1720; --panel:#18232e; --panel2:#1f2c39; --line:#2b3a48;
+    --txt:#e8eef4; --muted:#93a4b3; --accent:#2f9e6f; --accent2:#2b6fd6; --danger:#d9534f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:16px/1.45 -apple-system,Segoe UI,Roboto,system-ui,sans-serif;
+    display:flex; flex-direction:column; min-height:100dvh;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header{background:var(--panel); padding:12px 14px; border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px}
+  header h1{font-size:17px; margin:0; flex:1}
+  header .badge{font-size:11px; color:var(--muted)}
+  main{flex:1; padding:14px; display:flex; flex-direction:column; gap:12px; max-width:900px; width:100%; margin:0 auto}
+  .tabs{display:flex; gap:8px}
+  .tabs button{flex:1; padding:10px; border:1px solid var(--line); background:var(--panel2);
+    color:var(--muted); border-radius:10px; font-size:14px}
+  .tabs button.active{background:var(--accent2); color:#fff; border-color:var(--accent2)}
+  textarea{width:100%; min-height:34vh; resize:vertical; padding:12px; border-radius:12px;
+    border:1px solid var(--line); background:var(--panel); color:var(--txt); font-size:16px}
+  .row{display:flex; gap:8px; flex-wrap:wrap}
+  .row .grow{flex:1; min-width:130px}
+  label{font-size:12px; color:var(--muted); display:block; margin-bottom:4px}
+  select{width:100%; padding:10px; border-radius:10px; border:1px solid var(--line);
+    background:var(--panel2); color:var(--txt); font-size:14px}
+  .actions{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .actions .full{grid-column:1 / -1}
+  button.act{padding:14px; border-radius:12px; border:none; font-size:15px; font-weight:600;
+    color:#fff; background:var(--panel2); border:1px solid var(--line)}
+  button.act:active{transform:scale(.98)}
+  .btn-pdf{background:var(--accent2)}
+  .btn-tr{background:var(--accent)}
+  .btn-voice{background:#6a4bbf}
+  .btn-stop{background:var(--danger)}
+  .status{font-size:13px; color:var(--muted); min-height:20px; text-align:center}
+  .offline{background:#5a2230; color:#ffd7dd; font-size:12px; padding:6px 14px; text-align:center}
+  .hidden{display:none !important}
+  footer{font-size:11px; color:var(--muted); text-align:center; padding:8px}
+  /* PDF / impresion */
+  #printArea{display:none}
+  @media print{
+    body{background:#fff; color:#000; display:block}
+    header,main,footer,.offline{display:none !important}
+    #printArea{display:block; padding:0; font:12pt/1.5 Georgia,serif; white-space:pre-wrap;
+      word-wrap:break-word; color:#000}
+    @page{margin:18mm}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lector Texto</h1>
+  <span class="badge">pegar · PDF · traducir · voz</span>
+</header>
+
+<div id="offline" class="offline hidden">Sin conexión: PDF y voz funcionan; la traducción necesita internet.</div>
+
+<main>
+  <div class="tabs">
+    <button id="tabOrig" class="active">Original</button>
+    <button id="tabTrad">Traducción</button>
+  </div>
+
+  <textarea id="texto" placeholder="Pega aquí tu texto..."></textarea>
+
+  <div class="row">
+    <div class="grow">
+      <label for="srcLang">Idioma del texto</label>
+      <select id="srcLang"></select>
+    </div>
+    <div class="grow">
+      <label for="dstLang">Traducir a</label>
+      <select id="dstLang"></select>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="act btn-pdf" id="btnPdf">Guardar PDF</button>
+    <button class="act btn-voice" id="btnVoz">Leer en voz alta</button>
+    <button class="act btn-tr full" id="btnTraducir">Traducir</button>
+    <button class="act btn-stop full hidden" id="btnParar">Detener voz</button>
+  </div>
+
+  <div id="status" class="status"></div>
+</main>
+
+<footer>Hecho para uso personal · funciona offline (PDF y voz)</footer>
+<div id="printArea"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
