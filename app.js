@@ -41,7 +41,7 @@ function cargarSelects() {
 
 /* ---------- Deteccion de idioma (simple, por palabras comunes) ---------- */
 function detectarIdioma(texto) {
-  const t = ' ' + texto.toLowerCase().replace(/[^\p{L}\s]/gu, ' ') + ' ';
+  const t = ' ' + texto.toLowerCase().replace(/[.,;:!?¡¿"“”()\[\]{}<>/\\|-]/g, ' ').replace(/\s+/g, ' ') + ' ';
   const listas = {
     es: [' el ', ' la ', ' los ', ' las ', ' de ', ' que ', ' y ', ' en ', ' un ', ' una ', ' para ', ' con ', ' por ', ' no ', ' se '],
     en: [' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' a ', ' that ', ' for ', ' with ', ' it ', ' you ', ' are '],
@@ -120,7 +120,8 @@ function idiomaParaVoz() {
 }
 
 /* Chrome Android necesita locale completo (es-ES) y NO fijar .voice.
-   Ademas falla con textos largos: se parte en frases y se lee en cola. */
+   Ademas falla con textos largos: se parte en frases y se lee en cola.
+   Se resalta la palabra que se va leyendo en amarillo claro. */
 const LOCALES = {
   es: 'es-ES', en: 'en-US', pt: 'pt-BR', fr: 'fr-FR',
   it: 'it-IT', de: 'de-DE', ru: 'ru-RU',
@@ -128,19 +129,90 @@ const LOCALES = {
 
 function localeDe(lang) { return LOCALES[lang] || lang; }
 
-function partirParaVoz(texto) {
-  const frases = texto.replace(/\s+/g, ' ').split(/(?<=[.!?…])\s+/);
-  const partes = [];
-  let cur = '';
-  frases.forEach((f) => {
-    if ((cur + f).length > 180 && cur) { partes.push(cur.trim()); cur = ''; }
-    cur += (cur ? ' ' : '') + f;
-  });
-  if (cur.trim()) partes.push(cur.trim());
-  return partes.filter(Boolean);
+let vozActiva = false;
+let spans = [];           // {el, start, end} sobre el texto normalizado
+let highlightActual = null;
+
+function normalizar(t) { return t.replace(/\s+/g, ' ').trim(); }
+
+/* Construye la vista de lectura con cada palabra en un <span> */
+function construirLector(norm) {
+  const cont = $('lector');
+  cont.innerHTML = '';
+  spans = [];
+  const re = /\S+/g;
+  let m, last = 0;
+  while ((m = re.exec(norm)) !== null) {
+    if (m.index > last) cont.appendChild(document.createTextNode(norm.slice(last, m.index)));
+    const s = document.createElement('span');
+    s.className = 'w';
+    s.textContent = m[0];
+    cont.appendChild(s);
+    spans.push({ el: s, start: m.index, end: m.index + m[0].length });
+    last = m.index + m[0].length;
+  }
+  if (last < norm.length) cont.appendChild(document.createTextNode(norm.slice(last)));
 }
 
-let vozActiva = false;
+function limpiarResaltado() {
+  if (highlightActual) highlightActual.classList.remove('on');
+  highlightActual = null;
+}
+
+function resaltarGlobal(globalIdx) {
+  for (let k = 0; k < spans.length; k++) {
+    if (globalIdx >= spans[k].start && globalIdx < spans[k].end) {
+      if (highlightActual !== spans[k].el) {
+        limpiarResaltado();
+        highlightActual = spans[k].el;
+        highlightActual.classList.add('on');
+        highlightActual.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+      return;
+    }
+  }
+}
+
+/* Parte el texto normalizado en trozos <=180 y guarda el offset de cada uno */
+function partirConOffset(norm) {
+  const re = /[^.!?…]*[.!?…]+|\S[^.!?…]*$/g;
+  const sent = [];
+  let m;
+  while ((m = re.exec(norm)) !== null) {
+    if (m[0].trim()) sent.push({ start: m.index, end: m.index + m[0].length });
+    else re.lastIndex++;
+  }
+  const partes = [];
+  let cs = null, ce = null;
+  const flush = () => { if (cs !== null) { partes.push({ inicio: cs, texto: norm.slice(cs, ce) }); cs = null; } };
+  sent.forEach((s) => {
+    if (cs !== null && (s.end - cs) > 180) flush();
+    if (cs === null) cs = s.start;
+    ce = s.end;
+  });
+  flush();
+  /* normaliza offsets y parte trozos sin puntuacion que sean muy largos */
+  const fin = [];
+  partes.forEach((p) => {
+    const lead = p.texto.length - p.texto.trimStart().length;
+    const ini = p.inicio + lead;
+    const t = p.texto.trim();
+    if (t.length <= 200) { fin.push({ inicio: ini, texto: t }); return; }
+    let cur = '';
+    let curIni = ini;
+    t.split(' ').forEach((w) => {
+      if (cur && (cur.length + 1 + w.length) > 180) {
+        fin.push({ inicio: curIni, texto: cur });
+        curIni = curIni + cur.length + 1;
+        cur = w;
+      } else {
+        cur += (cur ? ' ' : '') + w;
+      }
+    });
+    if (cur) fin.push({ inicio: curIni, texto: cur });
+  });
+  return fin.filter((p) => p.texto);
+}
 
 function leer() {
   const texto = elTexto.value.trim();
@@ -149,9 +221,19 @@ function leer() {
   speechSynthesis.cancel();
   if (speechSynthesis.paused) speechSynthesis.resume();
 
+  const norm = normalizar(texto);
   const lang = localeDe(idiomaParaVoz());
-  const partes = partirParaVoz(texto);
+  const partes = partirConOffset(norm);
+
+  /* Mostrar la vista de lectura con resaltado */
+  norm && construirLector(norm);
+  elTexto.classList.add('hidden');
+  $('lectorWrap').classList.remove('hidden');
+  $('lectorInfo').textContent = 'Leyendo en ' + lang;
+  limpiarResaltado();
+
   let i = 0;
+  let timerFb = null;
   vozActiva = true;
   $('btnParar').classList.remove('hidden');
   setStatus('Leyendo en ' + lang + '...');
@@ -163,21 +245,49 @@ function leer() {
       $('btnParar').classList.add('hidden');
       return;
     }
-    const u = new SpeechSynthesisUtterance(partes[i]);
+    const parte = partes[i];
+    const base = parte.inicio;
+    const u = new SpeechSynthesisUtterance(parte.texto);
     u.lang = lang;
     u.rate = 1;
     u.pitch = 1;
-    u.onend = () => { i++; siguiente(); };
+    let huboBoundary = false;
+    u.onboundary = (e) => {
+      if (e.name && e.name !== 'word') return;
+      huboBoundary = true;
+      if (timerFb) { clearTimeout(timerFb); timerFb = null; }
+      resaltarGlobal(base + (e.charIndex || 0));
+    };
+    u.onstart = () => {
+      /* Si el navegador no manda boundary (comun en Android),
+         resaltamos el trozo entero como respaldo. */
+      if (timerFb) clearTimeout(timerFb);
+      timerFb = setTimeout(() => {
+        if (!huboBoundary && vozActiva) resaltarGlobal(base);
+      }, 500);
+    };
+    u.onend = () => {
+      if (timerFb) { clearTimeout(timerFb); timerFb = null; }
+      i++;
+      siguiente();
+    };
     u.onerror = (e) => {
+      if (timerFb) { clearTimeout(timerFb); timerFb = null; }
       const err = e && e.error ? e.error : 'desconocido';
       if (err === 'interrupted' || err === 'canceled') return;
       setStatus('No se pudo leer (' + err + '). Prueba idioma Espanol en el selector.');
       vozActiva = false;
       $('btnParar').classList.add('hidden');
+      volverAEditar();
     };
     speechSynthesis.speak(u);
   };
   siguiente();
+}
+
+function volverAEditar() {
+  $('lectorWrap').classList.add('hidden');
+  elTexto.classList.remove('hidden');
 }
 
 /* ---------- PDF (dialogo de impresion) ---------- */
@@ -198,11 +308,17 @@ elTexto.addEventListener('input', () => {
 });
 
 /* ---------- Eventos ---------- */
-$('tabOrig').onclick = () => mostrarVista('original');
-$('tabTrad').onclick = () => mostrarVista('traduccion');
+function detenerVoz() {
+  vozActiva = false;
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  $('btnParar').classList.add('hidden');
+}
+$('tabOrig').onclick = () => { detenerVoz(); volverAEditar(); mostrarVista('original'); };
+$('tabTrad').onclick = () => { detenerVoz(); volverAEditar(); mostrarVista('traduccion'); };
+$('btnEditar').onclick = () => { detenerVoz(); volverAEditar(); };
 $('btnPdf').onclick = guardarPDF;
 $('btnVoz').onclick = leer;
-$('btnParar').onclick = () => { vozActiva = false; speechSynthesis.cancel(); $('btnParar').classList.add('hidden'); setStatus('Detenido.'); };
+$('btnParar').onclick = () => { detenerVoz(); setStatus('Detenido.'); };
 $('btnTraducir').onclick = async () => {
   guardarVista();
   const texto = estado.original.trim();

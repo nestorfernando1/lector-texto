@@ -47,6 +47,15 @@
   .btn-voice{background:#6a4bbf}
   .btn-stop{background:var(--danger)}
   .status{font-size:13px; color:var(--muted); min-height:20px; text-align:center}
+  .lector-bar{display:flex; align-items:center; gap:10px; margin-bottom:6px}
+  .lector-bar span{font-size:12px; color:var(--muted); flex:1}
+  .lector-bar button{padding:8px 12px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel2); color:var(--txt); font-size:13px}
+  .lector{background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:14px; min-height:34vh; max-height:60vh; overflow-y:auto;
+    font-size:19px; line-height:1.95; white-space:pre-wrap; word-wrap:break-word}
+  .lector .w{border-radius:5px; transition:background .12s}
+  .lector .w.on{background:#fff3a3; color:#101010; box-shadow:0 0 0 1px #fff3a3}
   .offline{background:#5a2230; color:#ffd7dd; font-size:12px; padding:6px 14px; text-align:center}
   .hidden{display:none !important}
   footer{font-size:11px; color:var(--muted); text-align:center; padding:8px}
@@ -76,6 +85,14 @@
   </div>
 
   <textarea id="texto" placeholder="Pega aquí tu texto..."></textarea>
+
+  <div id="lectorWrap" class="hidden">
+    <div class="lector-bar">
+      <span id="lectorInfo"></span>
+      <button id="btnEditar">Editar</button>
+    </div>
+    <div id="lector" class="lector"></div>
+  </div>
 
   <div class="row">
     <div class="grow">
