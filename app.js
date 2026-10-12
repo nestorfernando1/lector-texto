@@ -159,6 +159,16 @@ function limpiarResaltado() {
   highlightActual = null;
 }
 
+function asegurarVisible(el) {
+  const caja = $('lector');
+  if (!caja) return;
+  const r = el.getBoundingClientRect();
+  const cr = caja.getBoundingClientRect();
+  if (r.top < cr.top + 10 || r.bottom > cr.bottom - 10) {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
 function resaltarGlobal(globalIdx) {
   for (let k = 0; k < spans.length; k++) {
     if (globalIdx >= spans[k].start && globalIdx < spans[k].end) {
@@ -166,7 +176,7 @@ function resaltarGlobal(globalIdx) {
         limpiarResaltado();
         highlightActual = spans[k].el;
         highlightActual.classList.add('on');
-        highlightActual.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        asegurarVisible(highlightActual);
       }
       return;
     }
@@ -233,13 +243,32 @@ function leer() {
   limpiarResaltado();
 
   let i = 0;
-  let timerFb = null;
+  let palabraTimer = null;
+  let modoTimer = false;
+  const limpiarTimer = () => { if (palabraTimer) { clearTimeout(palabraTimer); palabraTimer = null; } };
+
+  /* Estima la duracion por palabra segun su longitud (aprox. voz a ritmo normal) */
+  const MS_POR_LETRA = 66;
+  function palabrasDeChunk(parte, base) {
+    const ws = [];
+    const re = /\S+/g;
+    let m;
+    while ((m = re.exec(parte.texto)) !== null) {
+      let d = Math.max(150, m[0].length * MS_POR_LETRA);
+      if (/[.!?…]$/.test(m[0])) d += 240;
+      else if (/[,;:]$/.test(m[0])) d += 120;
+      ws.push({ start: base + m.index, dur: d });
+    }
+    return ws;
+  }
+
   vozActiva = true;
   $('btnParar').classList.remove('hidden');
   setStatus('Leyendo en ' + lang + '...');
 
   const siguiente = () => {
     if (!vozActiva || i >= partes.length) {
+      limpiarTimer();
       if (vozActiva) setStatus('Lectura terminada.');
       vozActiva = false;
       $('btnParar').classList.add('hidden');
@@ -247,32 +276,41 @@ function leer() {
     }
     const parte = partes[i];
     const base = parte.inicio;
+    const palabras = palabrasDeChunk(parte, base);
     const u = new SpeechSynthesisUtterance(parte.texto);
     u.lang = lang;
     u.rate = 1;
     u.pitch = 1;
-    let huboBoundary = false;
+    modoTimer = true;
+
+    /* Respaldo palabra a palabra por tiempo (Android no siempre manda boundary) */
+    const arrancarTimer = () => {
+      let idx = 0;
+      const tick = () => {
+        if (!vozActiva || !modoTimer || idx >= palabras.length) return;
+        resaltarGlobal(palabras[idx].start);
+        const espera = palabras[idx].dur;
+        idx++;
+        palabraTimer = setTimeout(tick, espera);
+      };
+      tick();
+    };
+
     u.onboundary = (e) => {
       if (e.name && e.name !== 'word') return;
-      huboBoundary = true;
-      if (timerFb) { clearTimeout(timerFb); timerFb = null; }
+      modoTimer = false;          /* el boundary es mas preciso */
+      limpiarTimer();
       resaltarGlobal(base + (e.charIndex || 0));
     };
-    u.onstart = () => {
-      /* Si el navegador no manda boundary (comun en Android),
-         resaltamos el trozo entero como respaldo. */
-      if (timerFb) clearTimeout(timerFb);
-      timerFb = setTimeout(() => {
-        if (!huboBoundary && vozActiva) resaltarGlobal(base);
-      }, 500);
-    };
+    u.onstart = () => { modoTimer = true; limpiarTimer(); arrancarTimer(); };
     u.onend = () => {
-      if (timerFb) { clearTimeout(timerFb); timerFb = null; }
+      limpiarTimer();
+      modoTimer = false;
       i++;
       siguiente();
     };
     u.onerror = (e) => {
-      if (timerFb) { clearTimeout(timerFb); timerFb = null; }
+      limpiarTimer();
       const err = e && e.error ? e.error : 'desconocido';
       if (err === 'interrupted' || err === 'canceled') return;
       setStatus('No se pudo leer (' + err + '). Prueba idioma Espanol en el selector.');
